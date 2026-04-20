@@ -2,7 +2,6 @@ package main
 
 import (
 	"net/http"
-	"regexp"
 
 	"github.com/labstack/echo-contrib/pprof"
 	"github.com/labstack/echo/v4"
@@ -28,22 +27,20 @@ type userRequest struct {
 	Names []string `json:"names"`
 }
 
-// Оптимизация 1: Компилируем регулярку один раз при старте
-var nameRegexp = regexp.MustCompile(`^[A-Z]`)
-
 func (a *API) handler(c echo.Context) error {
 	req := new(userRequest)
 	if err := c.Bind(req); err != nil {
 		return err
 	}
 
-	// Оптимизация 2: Заранее выделяем память под слайс,
-	// чтобы избежать переаллокаций в цикле (пока примерно)
-	results := make([]string, 0, len(req.Names))
+	var results []string
+	// Мы не выделяем заранее 1000, чтобы не пугать память
 
 	for _, name := range req.Names {
-		if nameRegexp.MatchString(name) {
-			// Оптимизация 3: Простая конкатенация вместо fmt.Sprintf
+		// Оптимизация 1: Вместо regexp используем быструю проверку символа
+		if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
+			// Оптимизация 2: Простая склейка (в Go для 2-3 элементов она ок,
+			// но так мы убираем лишнюю логику regexp)
 			results = append(results, "Hello, "+name+"!")
 		}
 	}
