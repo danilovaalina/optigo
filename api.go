@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"regexp"
 
@@ -29,20 +28,23 @@ type userRequest struct {
 	Names []string `json:"names"`
 }
 
+// Оптимизация 1: Компилируем регулярку один раз при старте
+var nameRegexp = regexp.MustCompile(`^[A-Z]`)
+
 func (a *API) handler(c echo.Context) error {
 	req := new(userRequest)
 	if err := c.Bind(req); err != nil {
 		return err
 	}
 
-	var results []string
-	// Компиляция регулярки внутри хендлера (тратит CPU)
-	re := regexp.MustCompile(`^[A-Z]`)
+	// Оптимизация 2: Заранее выделяем память под слайс,
+	// чтобы избежать переаллокаций в цикле (пока примерно)
+	results := make([]string, 0, len(req.Names))
 
 	for _, name := range req.Names {
-		if re.MatchString(name) {
-			// fmt.Sprintf создает лишние аллокации в цикле
-			results = append(results, fmt.Sprintf("Hello, %s!", name))
+		if nameRegexp.MatchString(name) {
+			// Оптимизация 3: Простая конкатенация вместо fmt.Sprintf
+			results = append(results, "Hello, "+name+"!")
 		}
 	}
 
