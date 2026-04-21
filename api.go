@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/labstack/echo-contrib/pprof"
 	"github.com/labstack/echo/v4"
@@ -27,23 +28,39 @@ type userRequest struct {
 	Names []string `json:"names"`
 }
 
+// Оптимизация 4: Пул для повторного использования слайсов
+var resultsPool = sync.Pool{
+	New: func() interface{} {
+		// Создаем слайс с запасом на 1000 элементов
+		return make([]string, 0, 1000)
+	},
+}
+
 func (a *API) handler(c echo.Context) error {
-	req := new(userRequest)
-	if err := c.Bind(req); err != nil {
+	var req userRequest
+	if err := c.Bind(&req); err != nil {
 		return err
 	}
 
-	var results []string
-	// Мы не выделяем заранее 1000, чтобы не пугать память
+	// 1. Получаем "чистую" тарелку из стопки (пула)
+	results := resultsPool.Get().([]string)
+
+	// 2. Сбрасываем длину до 0, но оставляем емкость (capacity)
+	// Это критически важно: память не выделяется заново!
+	results = results[:0]
 
 	for _, name := range req.Names {
-		// Оптимизация 1: Вместо regexp используем быструю проверку символа
 		if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
-			// Оптимизация 2: Простая склейка (в Go для 2-3 элементов она ок,
-			// но так мы убираем лишнюю логику regexp)
 			results = append(results, "Hello, "+name+"!")
 		}
 	}
 
-	return c.JSON(http.StatusOK, results)
+	// Отправляем ответ
+	err := c.JSON(http.StatusOK, results)
+
+	// 3. Возвращаем тарелку обратно в стопку (пул)
+	// Теперь другой запрос сможет забрать этот же слайс
+	resultsPool.Put(results)
+
+	return err
 }
